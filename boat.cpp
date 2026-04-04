@@ -10,43 +10,73 @@
 
 #include "GNOR_V4.h"
 #include <Arduino.h>
+#include <Servo.h>
 
-#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
-  #include <ESP32Servo.h>
-#else
-  #include <Servo.h>
-#endif
 
-extern Servo servo1;    // Rudder                        — declared in GNOR_V4.ino
+extern Servo servo1;    // Rudder — declared in GNOR_V4.ino
 extern Servo servo2;    // Right motor (dual motor)
 extern Servo servo3;    // Auxiliary servo
 extern Servo servoEsc;  // Single motor OR left motor (dual motor)
 
 unsigned long last_time = 0;     // last time through the loop
 
-#define LED2_DEAD_BAND      2.0f    // degrees — within this shows bright on-target green
-#define LED2_MAX_ERROR      90.0f   // degrees — clamp for color gradient (positive=red, negative=blue)
-#define LED2_MAX_BRIGHTNESS 128     // max channel brightness in the gradient zone (0–255)
+#define LED2_DEAD_BAND      5.0f    // degrees — within this shows bright on-target green
+#define LED2_MAX_ERROR      45.0f   // degrees — clamp for brightness gradient
+#define LED2_MAX_BRIGHTNESS 100     // max channel brightness in the gradient zone (0–255)
 #define LED2_ON_BRIGHTNESS  255     // green brightness when within LED2_DEAD_BAND
 
 #define P 2.0                       // Proportional constant used by the rudder or for each dual motor
 #define MOTOR_BASE_SPEED 0.5        // Default speed the single or dual motor(s) use (0.0-1.0)
+#define COUNTDOWN_TIME 10           // (open loop only) Countdown time, in seconds, to motor start after switch is activated
 #define THROTTLE_HIGH_DEGREES 145   // High throttle setting in servo degrees
 #define THROTTLE_LOW_DEGREES 35     // Low throttle setting in servo degrees
-#define MAX_RUDDER_DEGREES 90/2     // Max angle the rudder moves on each side of zreo (90). Normally 45 Degrees.
+#define MAX_RUDDER_DEGREES 90/2     // Max angle the rudder moves on each side of zero (90). Normally 45 Degrees.
 
-// Waypoint Array
-//
+// Waypoint Declaration========================================================================================================
+#ifndef OPEN_LOOP           // CLOSED LOOP-------------------------------------------------------------------------------------
 struct Waypoint {
     unsigned long time_ms;  // elapsed mission time to activate this heading
     int heading360;         // compass heading in degrees (0–360)
 };
+#elif defined(DUAL_MOTOR)   // OPEN LOOP WITH DUAL PROP------------------------------------------------------------------------
+struct Waypoint {
+    unsigned long time_ms;  // elapsed mission time to activate this heading
+    float percent_diff;     // 1.0 turns L full throttle, -1.0 turns R full throttle, 0 stays straight
+};
+#else                       // OPEN LOOP WITH RUDDER---------------------------------------------------------------------------
+struct Waypoint {
+    unsigned long time_ms;  // elapsed mission time to activate this heading
+    int servo_angle;        // servo offset in degrees, CW positive, centered at 0 (Note: magnitude capped by MAX_RUDDER_DEGREES)
+};
+#endif
 
+// Waypoint Array==============================================
+// CLOSED LOOP-------------------------------------------------
+#ifndef OPEN_LOOP
 static const Waypoint waypoints[] = {
     {     0,   0 },   // 0–10s:  straight ahead
     { 10000, 270 },   // 10–20s: turn to 270
     { 20000, 180 },   // 20s+:   turn to 180
 };
+// OPEN LOOP WITH DUAL PROP------------------------------------
+#elif defined(DUAL_MOTOR)
+static const Waypoint waypoints[] = {
+    {     0,   0 },   // 0–10s:  drive straight
+    { 10000, 0.5 },   // 10–11s: turn L at half current throttle
+    { 11000,   0 },   // 11–19s: drive straight
+    { 19000, 0.5 },   // 19–20s: turn L at half current throttle
+    { 20000,   0 },   // 20s+:   drive straight
+};
+// OPEN LOOP WITH RUDDER---------------------------------------
+#else
+static const Waypoint waypoints[] = {
+    {     0,   0 },   // 0–10s:  rudder straight
+    { 10000,  45 },   // 10–11s: turn L
+    { 11000,   0 },   // 11–19s: rudder straight
+    { 19000,  45 },   // 19–20s: turn L
+    { 20000,   0 },   // 20s+:   rudder straight
+};
+#endif
 static const int WAYPOINT_COUNT = sizeof(waypoints) / sizeof(waypoints[0]);
 
 /*
@@ -117,6 +147,7 @@ void boatLoop(unsigned long timestamp, double heading) {
 
 	// Static variables.  Keep their values between calls to "boatLoop"
     static double last_heading=0.0;			// used to calculate the delta heading
+    static unsigned long switch_time;       // time motor switch was last activated
     static unsigned long start_time;		// actual time the boat started.  Used as an offset to calculate elapsed time
     static int started=-1;					// has the boat started, -1=not ready, 0=ready, 1=started
     static double heading_zero_offset;		// heading offset.  Used to zero heading when button is pressed
@@ -180,6 +211,7 @@ void boatLoop(unsigned long timestamp, double heading) {
 #ifdef DUAL_MOTOR
         setMotor2Speed(0.0);
 #endif
+        switch_time = timestamp;
         heading_zero_offset = heading;
         started = 0;
         waypoint_index = 0;
@@ -191,7 +223,7 @@ void boatLoop(unsigned long timestamp, double heading) {
     }
         
     motor_switch_last = motor_switch_now;
-
+#ifndef OPEN_LOOP
     // Apply heading_zero offset and wrap into -180 to +180
     heading = calculateDifferenceBetweenAngles(heading, heading_zero_offset);
 
@@ -210,40 +242,51 @@ void boatLoop(unsigned long timestamp, double heading) {
         Serial.println(started);
         last_time = timestamp;
     }
+#endif // not OPEN_LOOP
 
-    // if the heading rate is less than some constant then turn on the Green LED
-#ifdef USE_WS2812
-    if (fabs(heading_rate) < .005) {
-        ws_setPixelColor(0, 0, 10, 0);
-    } else {
-        ws_setPixelColor(0, 10, 0, 0);
+    // if the heading rate is greater than some constant then turn on the red LED
+#if defined(USE_LEDS) && !defined(OPEN_LOOP)
+    if (fabs(heading_rate) > .005) {
+        digitalWrite(DRIFT_LED_PIN, HIGH);
+    }else{
+        digitalWrite(DRIFT_LED_PIN, LOW);
     }
 #endif
     
-    // check for boat start.  (currently rotate boat 90 degrees
+    // check for boat start
+#ifndef OPEN_LOOP
+    // Closed loop: rotate boat 90 degrees to start motor
     if (((calculateDifferenceBetweenAngles(heading, 90)) > 0.0) && (started==0)) {
         started = 1;
         start_time = timestamp;
         Serial.println("************* Started *************");
     }
+#else
+    // Open loop: wait for countdown to start motor
+    if(((timestamp - switch_time) >= COUNTDOWN_TIME*1000) && (started==0)){
+        started = 1;
+        start_time = timestamp;
+        Serial.println("************* Started *************");
+    }
+#endif
 
-    // handle orange "running LED"
+    // handle startup "running LED"
     // blinking: pre-start (started==0), solid: running (started==1)
-#ifdef USE_WS2812
+#ifdef USE_LEDS
     {
         static unsigned long last_blink_time = 0;
         static bool blink_state = false;
 
         if (started == 1) {
-            ws_setPixelColor(1, 40, 16, 0);          // solid orange
+            digitalWrite(STARTUP_LED_PIN, HIGH);          // solid color
         } else if (started == 0) {
             if ((timestamp - last_blink_time) >= 500) {
                 blink_state = !blink_state;
                 last_blink_time = timestamp;
             }
-            ws_setPixelColor(1, blink_state ? 40 : 0, blink_state ? 16 : 0, 0);
+            digitalWrite(STARTUP_LED_PIN, blink_state ? HIGH : LOW); // blinking color
         } else {
-            ws_setPixelColor(1, 0, 0, 0);           // off when not ready
+            digitalWrite(STARTUP_LED_PIN, LOW);           // off when not ready
         }
     }
 #endif
@@ -259,6 +302,7 @@ void boatLoop(unsigned long timestamp, double heading) {
                running_time >= waypoints[waypoint_index + 1].time_ms) {
             waypoint_index++;
         }
+#ifndef OPEN_LOOP // CLOSED LOOP-------------------------------------------------------------------
         target360 = waypoints[waypoint_index].heading360;
 
         // convert compass target to -180 to +180
@@ -267,7 +311,6 @@ void boatLoop(unsigned long timestamp, double heading) {
         // PID routine
         // bigger P causes boat to have more reaction to heading errors
         error = calculateDifferenceBetweenAngles(heading, target);
-
 
 #ifdef DUAL_MOTOR
         //--------------------------------------------------
@@ -301,34 +344,48 @@ void boatLoop(unsigned long timestamp, double heading) {
             setMotor1Speed(0.0);
         }
 #endif
+#elif defined(DUAL_MOTOR)// OPEN LOOP DUAL PROP----------------------------------------------------
+        diff = MOTOR_BASE_SPEED * waypoints[waypoint_index].percent_diff; // scale percent diff to base speed
+        // Cap at +-base speed, in case percent diff mistakenly exceeded +-1
+        if (diff >  MOTOR_BASE_SPEED) diff =  MOTOR_BASE_SPEED;
+        if (diff < -MOTOR_BASE_SPEED) diff = -MOTOR_BASE_SPEED;
+        if (motors_armed) {
+            setMotor2Speed(MOTOR_BASE_SPEED + diff);    // right
+            setMotor1Speed(MOTOR_BASE_SPEED - diff);    // left
+        } else {
+            setMotor2Speed(0.0);
+            setMotor1Speed(0.0);
+        }
+#else // OPEN LOOP RUDDER--------------------------------------------------------------------------
+        rudder = waypoints[waypoint_index].servo_angle; // Retreive waypoint rudder offset
+        if (rudder >  MAX_RUDDER_DEGREES) rudder =  MAX_RUDDER_DEGREES;
+        if (rudder < -MAX_RUDDER_DEGREES) rudder = -MAX_RUDDER_DEGREES;
+        servo1.write(90 + rudder);
+        if (motors_armed) {
+            setMotor1Speed(MOTOR_BASE_SPEED);
+        } else {
+            setMotor1Speed(0.0);
+        }
+#endif // ifndef OPEN_LOOP
+
     }
 
-    // Pixel 2: green when on target, red brightens for positive error, blue brightens for negative
-#ifdef USE_WS2812
+    // Heading LED: Max brightness at currently set heading, dims with offset
+#if defined(USE_LEDS) && !defined(OPEN_LOOP)
     {
         double led2_err = calculateDifferenceBetweenAngles(heading, target);
-        uint8_t r = 0, g = 0, b = 0;
+        uint8_t light = 0;
         if (fabs(led2_err) < LED2_DEAD_BAND) {
-            g = LED2_ON_BRIGHTNESS;
+            light = LED2_ON_BRIGHTNESS;
         } else {
             double abs_err = fabs(led2_err);
-            if (abs_err > LED2_MAX_ERROR) abs_err = LED2_MAX_ERROR;
-            float t = (float)((abs_err - LED2_DEAD_BAND) / (LED2_MAX_ERROR - LED2_DEAD_BAND));
-            if (led2_err > 0.0) {
-                r = (uint8_t)(t * LED2_MAX_BRIGHTNESS);  // positive error: red brightens
-            } else {
-                b = (uint8_t)(t * LED2_MAX_BRIGHTNESS);  // negative error: blue brightens
-            }
+            if (abs_err > LED2_MAX_ERROR) abs_err = LED2_MAX_ERROR; // cap error
+            float t = (float)(LED2_MAX_BRIGHTNESS / (LED2_MAX_ERROR - LED2_DEAD_BAND)); // dimness multiplier
+            light = (uint8_t)(t * (LED2_MAX_ERROR - abs_err));
         }
-        ws_setPixelColor(2, r, g, b);
+        analogWrite(HEADING_LED_PIN, light);
     }
 
-    // Update LEDs every 50ms
-    static unsigned long last_led_time = 0;
-    if ((timestamp - last_led_time) >= 50) {
-        ws_show();
-        last_led_time = timestamp;
-    }
 #endif
 
 }
