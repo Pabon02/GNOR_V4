@@ -122,7 +122,7 @@ Some off-brand Arduino boards, especially Nanos, do not use components that comp
 
 In this case, you should activate the USE_EXT_PULLUPS macro in the code by uncommenting the macro definition in the GNOR_V4.h file. Then, you should add 4.7kOhm resistors between the common V_in line (5V) and each of the A4 and A5 pins:
 
-*insert wiring diagram*
+![I2C external pull-ups](docs/External_pullups.png)
 
 #### MPU6050 IMU
 
@@ -132,19 +132,19 @@ An IMU is necessary to perform closed loop control. The IMU should be rigidly mo
 
 ### Closed Loop with Rudder
 
-*insert wiring diagram*
+![Nano Closed Loop Rudder](docs/GNOR_nano_CL_rudder_bb.png)
 
 ### Closed Loop with Dual Motor
 
-*insert wiring diagram*
+![Nano Closed Loop Dual Motor](docs/GNOR_nano_CL_dualProp_bb.png)
 
 ### Open Loop with Rudder
 
-*insert wiring diagram*
+![Nano Open Loop Rudder](docs/GNOR_nano_OL_rudder_bb.png)
 
 ### Open Loop with Dual Motor
 
-*insert wiring diagram*
+![Nano Open Loop Dual Motor](docs/GNOR_nano_OL_dualProp_bb.png)
 
 ## Code
 
