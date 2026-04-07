@@ -130,6 +130,11 @@ An IMU is necessary to perform closed loop control. The IMU should be rigidly mo
 
 ## Wiring Diagrams
 
+In the diagrams below, a button is used to represent the motor start switch, which is really just 2 jumper cables that can be connected to close the switch. LEDs are used to mimic the functionality of the LEDs on the GNOR_V4 green board:
+- The green LED indicates heading, when used with an MPU6050 IMU. The LED will glow bright green when facing 0 degrees, then gradually reduce in brightness as the board is turned away form 0 in either direction.
+- The red LED indicates IMU calibration. For the first 15-20 seconds after the board is powered, it should be kept as still as possible to reduce drift due to noise. Once the red LED is blinking infrequently, it is an indication that the IMU is calibrated.
+- The blue LED indicates motor start status. The LED will be off when the system is disarmed, blink when the system is in standby mode, and glow a solid blue when the motor is active. To activate the motor from standby mode, you can turn the board 90 degrees for a closed loop system or wait for the countdown timer in an open loop system.
+
 ### Closed Loop with Rudder
 
 ![Nano Closed Loop Rudder](docs/GNOR_nano_CL_rudder_bb.png)
