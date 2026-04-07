@@ -26,9 +26,9 @@
     // but pins 9 and 10 (Timer1) are preferred for servo use.
     // Avoid pins 5 and 6 if precise timing matters (Timer0, shared with millis).
     #define SERVO1_PIN       9   // Rudder
-    #define SERVO2_PIN       10  // Left motor (dual motor config)
+    #define SERVO2_PIN       10  // Right motor (dual motor config)
     #define SERVO3_PIN       3   // Auxiliary servo
-    #define ESC_PIN          11  // Single motor OR right motor (dual motor config)
+    #define ESC_PIN          11  // Single motor OR left motor (dual motor config)
     #define MOTOR_SWITCH     4   // Active low — use INPUT_PULLUP
     #define CALIBRATE_SWITCH 7   // Active low — use INPUT_PULLUP
     #define STARTUP_LED_PIN  13  // Onboard LED to indicate startup mode
