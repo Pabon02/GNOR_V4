@@ -150,11 +150,34 @@ An IMU is necessary to perform closed loop control. The IMU should be rigidly mo
 
 When uploading code in Arduino IDE, use a baud rate of 115200 to communicate between the board and the Serial Monitor.
 
+Reference the tables below for the segments of code that can be changed to affect your boat's performance.
+
 ### Header file: GNOR_V4.h
 
 | Line | Code | Purpose |
 |------|------|---------|
-| 12 |#define DUAL_MOTOR|Uncomment for dual motor configuration|
+| 12 |#define DUAL_MOTOR|Uncomment for dual motor configuration.|
+| 13 |#define OPEN_LOOP|Uncomment for open loop control (no sensor feedback).|
+| 15 |#define USE_MPU|Uncomment to use the MPU6050 IMU (necessary for closed loop control).|
+| 16 |#define USE_LEDS|Uncomment to use LEDs to indicate heading, IMU calibration, and mode status.|
+| 17 |#define USE_EXT_PULLUPS|Uncomment if external pull-up resistors are used on the I2C lines (A4 and A5).|
+| 28-37 |pin assignments|Reference these lines for wiring connections. If necessary, pin assignments can also be altered, although this is not recommended.|
 
 ### C++ File: boat.cpp
 
+| Line | Code | Purpose |
+|------|------|---------|
+| 28 |#define P 2.0|**Closed Loop Only:** Set the proportional gain value. Higher = more reactive, lower = less reactive. This should be a positive real number. Tune gradually as you test your watercraft.|
+| 29 |#define MOTOR_BASE_SPEED 0.5|Set the base motor operating speed, as a percentage from 0.0 to 1.0.|
+| 30 |#define COUNTDOWN_TIME 10|**Open Loop Only:** Set the countdown time, in seconds, for the motor to start after the motor switch is closed.|
+| 33 |#define MAX_RUDDER_DEGREES 90/2|**Rudder Only:** set the maximum turn angle of the servo, from 0 degrees, in either direction.|
+
+Lines 55 - 79 are used to define the waypoints array. This array contains timestamps and commands to perform at each specified time. There are 3 types of waypoints arrays, depending on your current configuration:
+
+- **Closed Loop:** Ensure the OPEN_LOOP macro is commented out and the USE_MPU macro is active if you want to use this configuration. Fill the array by adding ordered pairs in the format `{time, heading}`, where time is measured in milliseconds and heading is the desired yaw angle at the timestep, measured clockwise positive from a starting angle of 0.
+- **Open Loop with Dual Motor:** Ensure the OPEN_LOOP and DUAL_MOTOR macros are active to use this configuration. Fill the array by adding ordered pairs in the format `{time, diff}`, where time is measured in milliseconds and diff is the desired throttle difference between the motors. diff is expressed as a percentage whose magnitude ranges from 0.0 to 1.0. diff = 0.0 keeps the boat straight, diff = 1.0 is a hard left turn, and diff = -1.0 is a hard right turn. Using a magnitude between 0.0 and 1.0 allows the boat to turn more gradually while moving faster, because both motors will be active.
+- **Open Loop with Rudder:** Ensure the OPEN_LOOP macro is active and the DUAL_MOTOR macro is commented out to use this configuration. Fill the array by adding ordered pairs in the format `{time, angle}`, where time is measured in milliseconds and angle is the desired servo angle at the timestep. The angle is measured in degrees, clockwise positive, from a resting angle at 0. Note that the servo angle is capped at a maximum, set by the MAX_RUDDER_DEGREES macro in line 33.
+
+The code comes with default waypoints arrays for each type, so you can edit the desired array directly. It also includes comments explaining each leg of the included arrays:
+
+![Waypoints](docs/Waypoints.png)
