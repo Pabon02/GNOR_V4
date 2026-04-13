@@ -27,9 +27,11 @@ This project supports the following microcontroller boards:
 
 ## Arduino IDE 2.x Setup
 
-This project requires only standard Arduino libraries. Please download Arduino IDE from [their site](https://www.arduino.cc/en/software/) by selecting the option corresponding to your computer's operating system and configuration.
+This project requires mostly standard Arduino libraries. Please download Arduino IDE from [their site](https://www.arduino.cc/en/software/) by selecting the option corresponding to your computer's operating system and configuration.
 
 ---
+
+For teams using closed loop control with an MPU6050 IMU, please see step 5 from the main GNOR_V4 repository to download the required ZIP file and import it to Arduino IDE: https://github.com/UCFInnovationLab/GNOR_V4?tab=readme-ov-file#step-5---install-custom-libraries-from-zip-files
 
 ## Software Download
 
